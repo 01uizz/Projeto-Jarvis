@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+/* Tokens centralizados. Nenhum componente deve usar cores fixas. */
+:root {
+  --accent: #e5383b;
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+  --accent-contrast: #ffffff;
+
+  --background: #0b0b0c;
+  --surface: #151517;
+  --surface-2: #1e1e21;
+  --border: #2a2a2e;
+  --text: #f4f4f5;
+  --text-muted: #9a9aa2;
+  --danger: #f87171;
+  --success: #4ade80;
+}
+
+:root[data-theme="light"] {
+  --background: #f6f6f7;
+  --surface: #ffffff;
+  --surface-2: #efeff1;
+  --border: #dcdce0;
+  --text: #121214;
+  --text-muted: #62626b;
+  --danger: #dc2626;
+  --success: #16a34a;
+}
+
+:root[data-accent="blue"] { --accent: #3b82f6; }
+:root[data-accent="pink"] { --accent: #ec4899; }
+:root[data-accent="orange"] { --accent: #f97316; --accent-contrast: #1a1a1a; }
+:root[data-accent="yellow"] { --accent: #eab308; --accent-contrast: #1a1a1a; }
+
+@theme inline {
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-contrast: var(--accent-contrast);
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--text-muted);
+  --color-danger: var(--danger);
+  --color-success: var(--success);
+}
+
+html, body {
+  background: var(--background);
+  color: var(--text);
+  min-height: 100dvh;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  overflow-x: hidden;
+}
+
+@keyframes jarvis-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes jarvis-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+.anim-in { animation: jarvis-fade-in 0.22s ease-out both; }
+.anim-pulse { animation: jarvis-pulse 1.2s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-in, .anim-pulse { animation: none; }
+}
+
+/* Respeita a área segura de celulares com notch */
+.safe-bottom { padding-bottom: max(env(safe-area-inset-bottom), 0px); }
