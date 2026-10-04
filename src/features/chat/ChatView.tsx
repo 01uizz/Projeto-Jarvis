@@ -3,13 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Badge, Button, EmptyState, ErrorState, Loading } from "@/components/ui";
+import { useVoice } from "@/hooks/useVoice";
+import { speak, speechAvailable, stopSpeaking } from "@/services/voice";
 import type { ActionStatus, ChatMessage } from "@/types";
 import { useChat } from "./useChat";
 
 const STATUS_LABEL: Record<ActionStatus, { text: string; tone: "success" | "danger" | "neutral" | "accent" }> = {
   success: { text: "Executado", tone: "success" },
   error: { text: "Erro", tone: "danger" },
-  unavailable: { text: "Indisponível", tone: "neutral" },
+  unavailable: { text: "Não conectado", tone: "neutral" },
   denied: { text: "Bloqueado", tone: "danger" },
   pending_confirmation: { text: "Aguardando confirmação", tone: "accent" },
   cancelled: { text: "Cancelado", tone: "neutral" },
@@ -51,14 +53,65 @@ function Bubble({ message, onResolve, busy }: { message: ChatMessage; onResolve:
   );
 }
 
+const VOICE_LABEL: Record<string, string> = {
+  listening: "OUVINDO… fale agora",
+  processing: "PROCESSANDO…",
+  speaking: "RESPONDENDO…",
+};
+
+const SPEAK_KEY = "jarvis.speak_replies";
+
 export function ChatView() {
   const { messages, loading, sending, error, send, resolveConfirmation, newConversation, reload } = useChat();
   const [text, setText] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
+  const [speaking, setSpeaking] = useState(false);
+  const [autoSpeak, setAutoSpeak] = useState(false);
+  const spokenUpTo = useRef<string | null>(null);
+  const voice = useVoice((spoken) => {
+    setText("");
+    void send(spoken);
+  });
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, sending]);
+
+  useEffect(() => {
+    try {
+      setAutoSpeak(window.localStorage.getItem(SPEAK_KEY) === "1");
+    } catch {
+      /* preferência de interface; sem armazenamento, fica desligado */
+    }
+    return () => stopSpeaking();
+  }, []);
+
+  // Resposta falada: só fala mensagens NOVAS do JARVIS (não o histórico carregado)
+  useEffect(() => {
+    const last = messages[messages.length - 1];
+    if (loading || !last) return;
+    if (spokenUpTo.current === null) {
+      spokenUpTo.current = last.id;
+      return;
+    }
+    if (last.id === spokenUpTo.current) return;
+    spokenUpTo.current = last.id;
+    if (autoSpeak && last.role === "assistant") speak(last.content, { onStart: () => setSpeaking(true), onEnd: () => setSpeaking(false), onError: () => setSpeaking(false) });
+  }, [messages, loading, autoSpeak]);
+
+  const toggleSpeak = () => {
+    const next = !autoSpeak;
+    setAutoSpeak(next);
+    if (!next) {
+      stopSpeaking();
+      setSpeaking(false);
+    }
+    try {
+      window.localStorage.setItem(SPEAK_KEY, next ? "1" : "0");
+    } catch {
+      /* ignorado */
+    }
+  };
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -67,6 +120,11 @@ export function ChatView() {
     void send(value);
   };
 
+  const listening = voice.state === "listening";
+  const voiceUnavailable = voice.state === "unsupported";
+  const voiceProblem = voice.state === "error" || voice.state === "denied" || voiceUnavailable;
+  const voiceNote = voiceProblem ? (voice.state === "denied" ? `SEM PERMISSÃO. ${voice.detail ?? ""}` : voiceUnavailable ? `INDISPONÍVEL. ${voice.detail ?? ""}` : `ERRO. ${voice.detail ?? ""}`) : speaking ? VOICE_LABEL.speaking : VOICE_LABEL[voice.state] ?? null;
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -74,9 +132,16 @@ export function ChatView() {
           <span className="h-2.5 w-2.5 rounded-full bg-accent anim-pulse" aria-hidden />
           <h1 className="text-base font-semibold tracking-[0.2em]">JARVIS</h1>
         </div>
-        <Button variant="ghost" size="sm" onClick={() => void newConversation()}>
-          Nova conversa
-        </Button>
+        <div className="flex items-center gap-1">
+          {speechAvailable() ? (
+            <Button variant="ghost" size="sm" onClick={toggleSpeak} aria-pressed={autoSpeak} aria-label="Resposta falada" title="Resposta falada">
+              {autoSpeak ? "🔊" : "🔇"}
+            </Button>
+          ) : null}
+          <Button variant="ghost" size="sm" onClick={() => void newConversation()}>
+            Nova conversa
+          </Button>
+        </div>
       </header>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4">
@@ -89,7 +154,7 @@ export function ChatView() {
         ) : messages.length === 0 ? (
           <EmptyState
             title="Olá, eu sou o JARVIS"
-            description={'Experimente: "Me lembra amanhã às 8 de estudar" ou "Crie uma tarefa para estudar matemática amanhã às 15h".'}
+            description={'Experimente: "Me lembra amanhã às 8 de estudar", "Marque uma consulta no dia 15 às 14h" ou "Guarde que meu objetivo é comprar um notebook".'}
           />
         ) : (
           messages.map((m) => <Bubble key={m.id} message={m} onResolve={resolveConfirmation} busy={sending} />)
@@ -107,13 +172,22 @@ export function ChatView() {
         <div ref={endRef} />
       </div>
 
+      {voiceNote ? (
+        <p className={`px-4 pb-1 text-xs ${voiceProblem ? "text-danger" : "text-accent"}`} role="status">
+          {voice.interim ? `“${voice.interim}”` : voiceNote}
+        </p>
+      ) : null}
       <form onSubmit={submit} className="flex items-end gap-2 border-t border-border bg-background px-3 py-3">
         <button
           type="button"
-          disabled
-          title="Voz: em breve"
-          aria-label="Entrada por voz (em breve)"
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border text-muted opacity-50"
+          onClick={voice.toggle}
+          disabled={sending || loading}
+          title={voiceUnavailable ? voice.detail ?? "Voz indisponível" : listening ? "Parar" : "Falar"}
+          aria-label={listening ? "Parar gravação" : "Falar com o JARVIS"}
+          aria-pressed={listening}
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition disabled:opacity-50 ${
+            listening ? "border-accent bg-accent text-accent-contrast anim-pulse" : voiceUnavailable ? "border-border text-muted opacity-60" : "border-border text-text hover:bg-surface-2"
+          }`}
         >
           🎙
         </button>

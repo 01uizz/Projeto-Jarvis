@@ -5,6 +5,13 @@ import { useAuth } from "@/components/Providers";
 import { friendlyError } from "@/lib/errors";
 import type { Task, TaskPriority } from "@/types";
 
+export interface TaskInput {
+  title: string;
+  due_at: string | null;
+  priority: TaskPriority;
+  category: string | null;
+}
+
 export function useTasks() {
   const { supabase, user } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -17,7 +24,7 @@ export function useTasks() {
     setError(null);
     const { data, error: err } = await supabase
       .from("tasks")
-      .select("id, title, description, due_at, priority, status, created_at")
+      .select("id, title, description, due_at, priority, status, category, source, created_at")
       .eq("user_id", user.id)
       .order("status", { ascending: false })
       .order("due_at", { ascending: true, nullsFirst: false })
@@ -31,14 +38,14 @@ export function useTasks() {
     reload();
   }, [reload]);
 
-  const add = async (input: { title: string; due_at: string | null; priority: TaskPriority }) => {
+  const add = async (input: TaskInput) => {
     if (!supabase || !user) return;
-    const { error: err } = await supabase.from("tasks").insert({ user_id: user.id, status: "pending", ...input });
+    const { error: err } = await supabase.from("tasks").insert({ user_id: user.id, status: "pending", source: "manual", ...input });
     if (err) throw err;
     await reload();
   };
 
-  const update = async (id: string, patch: Partial<Pick<Task, "title" | "due_at" | "priority" | "status">>) => {
+  const update = async (id: string, patch: Partial<Pick<Task, "title" | "due_at" | "priority" | "status" | "category">>) => {
     if (!supabase || !user) return;
     const extra = patch.status === "done" ? { completed_at: new Date().toISOString() } : patch.status === "pending" ? { completed_at: null } : {};
     const { error: err } = await supabase

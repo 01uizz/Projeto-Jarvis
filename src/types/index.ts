@@ -30,6 +30,7 @@ export interface PendingConfirmation {
 
 export type TaskPriority = "low" | "medium" | "high";
 export type TaskStatus = "pending" | "done";
+export type RecordSource = "manual" | "agent";
 
 export interface Task {
   id: string;
@@ -38,16 +39,24 @@ export interface Task {
   due_at: string | null;
   priority: TaskPriority;
   status: TaskStatus;
+  category: string | null;
+  source: RecordSource | null;
   created_at: string;
 }
+
+export type ReminderStatus = "pending" | "sent" | "cancelled";
 
 export interface Reminder {
   id: string;
   message: string;
   remind_at: string;
-  status: "pending" | "sent" | "cancelled";
+  status: ReminderStatus;
+  source: RecordSource | null;
   created_at: string;
 }
+
+export const MEMORY_TYPES = ["preferência", "informação pessoal", "objetivo", "contexto", "hábito", "informação temporária"] as const;
+export type MemoryType = (typeof MEMORY_TYPES)[number];
 
 export interface Memory {
   id: string;
@@ -64,6 +73,28 @@ export interface CalendarEvent {
   title: string;
   starts_at: string;
   ends_at: string | null;
+  description: string | null;
+  location: string | null;
+  source: RecordSource | null;
+}
+
+export const NOTIFICATION_KINDS = ["tarefa", "lembrete", "evento", "sistema", "segurança", "integração", "ação do agente"] as const;
+export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
+
+export interface AppNotification {
+  id: string;
+  title: string;
+  body: string | null;
+  kind: string | null;
+  read_at: string | null;
+  created_at: string;
+}
+
+export interface Profile {
+  id: string;
+  username: string | null;
+  display_name: string | null;
+  onboarding_completed: boolean | null;
 }
 
 export type AccentColor = "red" | "blue" | "pink" | "orange" | "yellow";

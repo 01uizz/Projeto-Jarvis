@@ -1,0 +1,109 @@
+name: Android APK
+
+# Gera o APK do JARVIS na nuvem, assina e publica em GitHub Releases.
+# Uso (pelo celular): Actions → "Android APK" → Run workflow → informe versão e código.
+on:
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: "Versão (ex.: 1.0.0)"
+        required: true
+      version_code:
+        description: "Código da versão (inteiro, sempre maior que o anterior)"
+        required: true
+      notes:
+        description: "Notas da versão"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      JARVIS_APP_URL: ${{ vars.JARVIS_APP_URL }}
+      VERSION_NAME: ${{ inputs.version_name }}
+      VERSION_CODE: ${{ inputs.version_code }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Instalar dependências
+        run: npm install --no-audit --no-fund
+
+      - name: Gerar configuração do Capacitor
+        run: node scripts/android/make-config.mjs
+
+      - name: Criar projeto Android
+        run: npx cap add android
+
+      - name: Ajustar manifest e versão
+        run: node scripts/android/patch-android.mjs
+
+      - name: Sincronizar plugins
+        run: npx cap sync android
+
+      - name: Compilar (release, sem assinatura)
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Assinar APK
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          UNSIGNED="$(ls android/app/build/outputs/apk/release/*.apk | head -1)"
+          if [ -n "${KS_B64:-}" ]; then
+            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            ALIAS="$KEY_ALIAS"; SP="$KS_PASS"; KP="${KEY_PASS:-$KS_PASS}"
+            echo "SIGNING=chave de release (secrets)" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Sem keystore nos Secrets. Assinando com chave TEMPORÁRIA: este APK não atualiza por cima de versões anteriores. Veja o README (Assinatura)."
+            ALIAS=jarvis-temp; SP="$(openssl rand -hex 12)"; KP="$SP"
+            keytool -genkeypair -v -keystore "$RUNNER_TEMP/release.keystore" -alias "$ALIAS" -keyalg RSA -keysize 2048 -validity 10000 -storepass "$SP" -keypass "$KP" -dname "CN=JARVIS temporario"
+            echo "SIGNING=chave temporária (NÃO use em produção)" >> "$GITHUB_ENV"
+          fi
+          "$BT/zipalign" -p -f 4 "$UNSIGNED" "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" sign --ks "$RUNNER_TEMP/release.keystore" --ks-key-alias "$ALIAS" --ks-pass "pass:$SP" --key-pass "pass:$KP" --out "jarvis-${VERSION_NAME}.apk" "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" verify --print-certs "jarvis-${VERSION_NAME}.apk"
+          rm -f "$RUNNER_TEMP/release.keystore"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-${{ inputs.version_name }}
+          path: jarvis-${{ inputs.version_name }}.apk
+
+      - name: Publicar em GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: ${{ inputs.notes }}
+        run: |
+          TAG="android-v${VERSION_NAME}"
+          gh release create "$TAG" "jarvis-${VERSION_NAME}.apk" --title "JARVIS ${VERSION_NAME}" --notes "${NOTES:-JARVIS ${VERSION_NAME}}"
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/jarvis-${VERSION_NAME}.apk"
+          {
+            echo "## APK publicado"
+            echo "Assinatura: ${SIGNING}"
+            echo ""
+            echo "Link de download: ${URL}"
+            echo ""
+            echo "Cadastre a versão em app_releases (SQL Editor do Supabase). Ajuste os nomes das colunas para os reais da sua tabela:"
+            echo '```sql'
+            echo "insert into app_releases (version_name, version_code, download_url, release_notes, is_required)"
+            echo "values ('${VERSION_NAME}', ${VERSION_CODE}, '${URL}', '${NOTES//\'/\'\'}', false);"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

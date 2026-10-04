@@ -1,18 +1,32 @@
 import type { ToolDefinition } from "@/features/agent/types";
-import { calendarRead } from "./calendar";
+import { deviceGetLocation, deviceNotify, deviceOpenApp, deviceStatus } from "./device";
+import { calendarCreate, calendarDelete, calendarRead, calendarUpdate } from "./calendar";
 import { memorySave, memorySearch } from "./memory";
-import { createReminder } from "./reminders";
-import { createTask, listTasks } from "./tasks";
+import { notificationsRead } from "./notifications";
+import { createReminder, deleteReminder, updateReminder } from "./reminders";
+import { createTask, deleteTask, listTasks, updateTask } from "./tasks";
 import { emailSend, messageSend, paymentExecute, webSearch } from "./unavailable";
 
-/** Para adicionar uma função nova (ex.: update_task), crie a ferramenta e registre aqui. */
+/** Para adicionar uma função nova, crie a ferramenta e registre-a aqui. */
 const ALL_TOOLS: ToolDefinition[] = [
   createTask,
   listTasks,
+  updateTask,
+  deleteTask,
   createReminder,
+  updateReminder,
+  deleteReminder,
   memorySave,
   memorySearch,
   calendarRead,
+  calendarCreate,
+  calendarUpdate,
+  calendarDelete,
+  notificationsRead,
+  deviceOpenApp,
+  deviceGetLocation,
+  deviceNotify,
+  deviceStatus,
   webSearch,
   emailSend,
   messageSend,

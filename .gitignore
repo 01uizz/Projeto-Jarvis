@@ -14,3 +14,9 @@ next-env.d.ts
 .vercel
 .DS_Store
 npm-debug.log*
+
+# Android (gerado no CI, não versionar)
+android/
+capacitor.config.json
+*.keystore
+*.jks

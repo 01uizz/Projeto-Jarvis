@@ -1,9 +1,20 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ActionStatus } from "@/types";
 
+export type AuditOrigin = "chat" | "confirmation" | "ui" | "system";
+
 export async function writeAudit(
   supabase: SupabaseClient,
-  entry: { userId: string; action: string; tool?: string; status: ActionStatus | string; result?: string; metadata?: Record<string, unknown> },
+  entry: {
+    userId: string;
+    action: string;
+    tool?: string;
+    status: ActionStatus | string;
+    origin?: AuditOrigin;
+    result?: string;
+    error?: string;
+    metadata?: Record<string, unknown>;
+  },
 ): Promise<void> {
   try {
     const { error } = await supabase.from("audit_logs").insert({
@@ -11,7 +22,9 @@ export async function writeAudit(
       action: entry.action,
       tool: entry.tool ?? null,
       status: entry.status,
+      origin: entry.origin ?? "chat",
       result: entry.result ?? null,
+      error: entry.error ?? null,
       metadata: entry.metadata ?? {},
     });
     if (error) console.error("[JARVIS] audit_logs", error);

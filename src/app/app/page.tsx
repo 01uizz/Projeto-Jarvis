@@ -5,14 +5,17 @@ import { useAuth } from "@/components/Providers";
 import { Loading, ErrorState } from "@/components/ui";
 import { AgendaView } from "@/features/calendar/AgendaView";
 import { ChatView } from "@/features/chat/ChatView";
+import { DashboardView } from "@/features/dashboard/DashboardView";
+import type { TabId } from "@/features/dashboard/DashboardView";
 import { useDueReminders } from "@/features/reminders/useDueReminders";
+import { DeviceGate } from "@/android/DeviceGate";
+import { DeviceRuntimeProvider } from "@/android/runtime";
 import { AuthScreen } from "@/features/settings/AuthScreen";
 import { MoreView } from "@/features/settings/MoreView";
 import { TasksView } from "@/features/tasks/TasksView";
 
-type Tab = "chat" | "tarefas" | "agenda" | "mais";
-
-const TABS: Array<{ id: Tab; label: string; icon: string }> = [
+const TABS: Array<{ id: TabId; label: string; icon: string }> = [
+  { id: "inicio", label: "Início", icon: "◎" },
   { id: "chat", label: "Chat", icon: "💬" },
   { id: "tarefas", label: "Tarefas", icon: "✓" },
   { id: "agenda", label: "Agenda", icon: "📅" },
@@ -20,23 +23,25 @@ const TABS: Array<{ id: Tab; label: string; icon: string }> = [
 ];
 
 function Shell() {
-  const [tab, setTab] = useState<Tab>("chat");
+  // O chat é a interface principal; o painel é um toque abaixo. Cada aba recarrega seus dados reais ao abrir.
+  const [tab, setTab] = useState<TabId>("chat");
   useDueReminders();
   return (
     <div className="mx-auto flex h-dvh w-full max-w-2xl flex-col">
       <main className="min-h-0 flex-1">
+        {tab === "inicio" && <DashboardView onNavigate={setTab} />}
         {tab === "chat" && <ChatView />}
         {tab === "tarefas" && <TasksView />}
         {tab === "agenda" && <AgendaView />}
         {tab === "mais" && <MoreView />}
       </main>
-      <nav className="safe-bottom grid grid-cols-4 border-t border-border bg-surface" aria-label="Navegação principal">
+      <nav className="safe-bottom grid grid-cols-5 border-t border-border bg-surface" aria-label="Navegação principal">
         {TABS.map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
             aria-current={tab === t.id ? "page" : undefined}
-            className={`flex min-h-14 flex-col items-center justify-center gap-0.5 text-xs transition ${tab === t.id ? "text-accent" : "text-muted"}`}
+            className={`flex min-h-14 flex-col items-center justify-center gap-0.5 text-[11px] transition ${tab === t.id ? "text-accent" : "text-muted"}`}
           >
             <span className="text-lg leading-none" aria-hidden>
               {t.icon}
@@ -61,5 +66,12 @@ export default function Home() {
       </div>
     );
   }
-  return user ? <Shell /> : <AuthScreen />;
+  if (!user) return <AuthScreen />;
+  return (
+    <DeviceRuntimeProvider>
+      <DeviceGate>
+        <Shell />
+      </DeviceGate>
+    </DeviceRuntimeProvider>
+  );
 }

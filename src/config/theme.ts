@@ -13,8 +13,8 @@ export const DEFAULT_MODE: ThemeMode = "dark";
 export const DEFAULT_AUTONOMY: AutonomyLevel = 1;
 
 export const AUTONOMY_LABELS: Record<AutonomyLevel, { name: string; description: string }> = {
-  0: { name: "Nível 0", description: "Somente responde. Não executa nenhuma ação." },
-  1: { name: "Nível 1", description: "Executa ações simples e seguras. Pede confirmação nas demais." },
-  2: { name: "Nível 2", description: "Executa ações moderadas e pede confirmação quando necessário." },
-  3: { name: "Nível 3", description: "Maior autonomia dentro das permissões. Ações de alto risco sempre pedem confirmação." },
+  0: { name: "Nível 0 · Somente conversa", description: "Responde, mas não executa nenhuma ação." },
+  1: { name: "Nível 1 · Ações simples", description: "Cria tarefas, lembretes, eventos e memórias. Exclusões pedem confirmação." },
+  2: { name: "Nível 2 · Ações autorizadas", description: "Executa as ações que você já liberou em Permissões, pedindo confirmação só nas sensíveis." },
+  3: { name: "Nível 3 · Automações autorizadas", description: "Reservado para automações que você autorizar. O motor de automações ainda não existe, então hoje se comporta como o Nível 2." },
 };

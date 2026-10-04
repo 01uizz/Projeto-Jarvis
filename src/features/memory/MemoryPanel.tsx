@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/Providers";
-import { Badge, Button, Card, ConfirmDialog, EmptyState, ErrorState, Input, Loading, Modal, Switch, useToast } from "@/components/ui";
+import { Badge, Button, Card, ConfirmDialog, EmptyState, ErrorState, Input, Loading, Modal, Select, Switch, useToast } from "@/components/ui";
 import { friendlyError } from "@/lib/errors";
+import { MEMORY_TYPES } from "@/types";
 import type { Memory } from "@/types";
 
 export function MemoryPanel() {
@@ -16,6 +17,7 @@ export function MemoryPanel() {
   const [text, setText] = useState("");
   const [deleting, setDeleting] = useState<Memory | null>(null);
   const [newText, setNewText] = useState("");
+  const [newType, setNewType] = useState<string>(MEMORY_TYPES[0]);
 
   const load = useCallback(async () => {
     if (!supabase || !user) return;
@@ -44,18 +46,27 @@ export function MemoryPanel() {
 
   const add = async () => {
     if (!supabase || !user || !newText.trim()) return;
-    await run(supabase.from("memories").insert({ user_id: user.id, content: newText.trim(), category: "geral", source: "manual", confidence: 1, is_active: true }));
+    await run(supabase.from("memories").insert({ user_id: user.id, content: newText.trim(), category: newType, source: "manual", confidence: 1, is_active: true }));
     setNewText("");
   };
 
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted">O que o JARVIS guardou sobre você. Você controla tudo: edite, desative ou exclua.</p>
-      <div className="flex gap-2">
+      <div className="space-y-2">
         <Input aria-label="Nova memória" placeholder="Guardar algo novo…" value={newText} onChange={(e) => setNewText(e.target.value)} />
-        <Button onClick={add} disabled={!newText.trim()}>
-          Salvar
-        </Button>
+        <div className="flex gap-2">
+          <Select aria-label="Tipo" value={newType} onChange={(e) => setNewType(e.target.value)}>
+            {MEMORY_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </Select>
+          <Button onClick={add} disabled={!newText.trim()}>
+            Salvar
+          </Button>
+        </div>
       </div>
       {loading ? (
         <div className="flex justify-center py-8">

@@ -7,6 +7,7 @@ import { friendlyError } from "@/lib/errors";
 import type { Task, TaskPriority } from "@/types";
 import { formatWhen } from "@/utils/datetime";
 import { useTasks } from "./useTasks";
+import type { TaskInput } from "./useTasks";
 
 type Filter = "pending" | "done" | "all";
 const PRIORITY_LABEL: Record<TaskPriority, string> = { low: "Baixa", medium: "Média", high: "Alta" };
@@ -18,7 +19,8 @@ function toLocalInput(iso: string | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function TaskForm({ initial, onSubmit, onClose }: { initial?: Task; onSubmit: (v: { title: string; due_at: string | null; priority: TaskPriority }) => Promise<void>; onClose: () => void }) {
+function TaskForm({ initial, onSubmit, onClose }: { initial?: Task; onSubmit: (v: TaskInput) => Promise<void>; onClose: () => void }) {
+  const [category, setCategory] = useState(initial?.category ?? "");
   const [title, setTitle] = useState(initial?.title ?? "");
   const [due, setDue] = useState(toLocalInput(initial?.due_at ?? null));
   const [priority, setPriority] = useState<TaskPriority>(initial?.priority ?? "medium");
@@ -30,7 +32,7 @@ function TaskForm({ initial, onSubmit, onClose }: { initial?: Task; onSubmit: (v
     if (!title.trim()) return;
     setBusy(true);
     try {
-      await onSubmit({ title: title.trim(), due_at: due ? new Date(due).toISOString() : null, priority });
+      await onSubmit({ title: title.trim(), due_at: due ? new Date(due).toISOString() : null, priority, category: category.trim() || null });
       onClose();
     } catch (err) {
       toast(friendlyError(err, "Não foi possível salvar essa tarefa. Tente novamente."), "error");
@@ -43,6 +45,7 @@ function TaskForm({ initial, onSubmit, onClose }: { initial?: Task; onSubmit: (v
     <form onSubmit={submit} className="space-y-3">
       <Input label="Tarefa" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Estudar para prova" required autoFocus />
       <Input label="Data e horário (opcional)" type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} />
+      <Input label="Categoria (opcional)" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Estudos, Casa, Trabalho…" />
       <Select label="Prioridade" value={priority} onChange={(e) => setPriority(e.target.value as TaskPriority)}>
         <option value="low">Baixa</option>
         <option value="medium">Média</option>
@@ -111,6 +114,8 @@ export function TasksView() {
                 <div className="mt-1 flex flex-wrap items-center gap-1.5">
                   {t.due_at ? <span className="text-xs text-muted">{formatWhen(t.due_at)}</span> : null}
                   <Badge tone={t.priority === "high" ? "danger" : t.priority === "medium" ? "accent" : "neutral"}>{PRIORITY_LABEL[t.priority] ?? t.priority}</Badge>
+                  {t.category ? <Badge>{t.category}</Badge> : null}
+                  {t.source === "agent" ? <Badge tone="accent">via JARVIS</Badge> : null}
                 </div>
               </div>
               <Dropdown

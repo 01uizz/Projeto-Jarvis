@@ -47,7 +47,21 @@ export function parseWhen(input: string, now: Date = new Date()): ParsedWhen {
       if (!dm[3] && date.getTime() < now.getTime() - 24 * 3600 * 1000) date.setFullYear(year + 1);
       hasDate = true;
     } else {
-      for (const [name, idx] of Object.entries(WEEKDAYS)) {
+      // "dia 15" → próxima ocorrência do dia 15 do mês
+      const dd = text.match(/\bdia\s+(\d{1,2})\b(?!\/)/);
+      if (dd) {
+        const day = Number(dd[1]);
+        if (day >= 1 && day <= 31) {
+          date.setDate(day);
+          const todayStart = new Date(now);
+          todayStart.setHours(0, 0, 0, 0);
+          if (date.getTime() < todayStart.getTime()) {
+            date.setMonth(date.getMonth() + 1, day);
+          }
+          hasDate = true;
+        }
+      }
+      for (const [name, idx] of hasDate ? [] : Object.entries(WEEKDAYS)) {
         if (new RegExp(`\\b${name}`).test(text)) {
           let diff = (idx - date.getDay() + 7) % 7;
           if (diff === 0) diff = 7;
@@ -93,6 +107,13 @@ export function formatWhen(iso: string | Date): string {
   if (sameDay(d, now)) return `Hoje, ${time}`;
   if (sameDay(d, tomorrow)) return `Amanhã, ${time}`;
   return `${d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}, ${time}`;
+}
+
+/** "sexta-feira, 09/10 às 10:00" — usado em perguntas de confirmação. */
+export function describeWhen(d: Date, hasTime = true): string {
+  const day = d.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit" });
+  if (!hasTime) return day;
+  return `${day} às ${d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
 }
 
 export function startOfDay(d: Date): Date {

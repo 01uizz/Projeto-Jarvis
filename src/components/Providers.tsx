@@ -15,9 +15,20 @@ interface AuthState {
   user: User | null;
   loading: boolean;
   configured: boolean;
+  /** True quando a sessão atual veio de um link de recuperação de senha. */
+  recovery: boolean;
+  clearRecovery: () => void;
   signOut: () => Promise<void>;
 }
-const AuthContext = createContext<AuthState>({ supabase: null, user: null, loading: true, configured: false, signOut: async () => {} });
+const AuthContext = createContext<AuthState>({
+  supabase: null,
+  user: null,
+  loading: true,
+  configured: false,
+  recovery: false,
+  clearRecovery: () => {},
+  signOut: async () => {},
+});
 export const useAuth = () => useContext(AuthContext);
 
 /* ---------------- Tema ---------------- */
@@ -43,15 +54,38 @@ function applyTheme(accent: AccentColor, mode: ThemeMode) {
   if (meta) meta.setAttribute("content", resolved === "light" ? "#f6f6f7" : "#0b0b0c");
 }
 
+/** Cria o perfil no primeiro login, usando username/display_name informados no cadastro. */
+async function ensureProfile(supabase: SupabaseClient, user: User): Promise<void> {
+  const { data, error } = await supabase.from("profiles").select("id").eq("id", user.id).maybeSingle();
+  if (error) {
+    console.error("[JARVIS] profiles (select)", error);
+    return;
+  }
+  if (data) return;
+  const meta = (user.user_metadata ?? {}) as { username?: string; display_name?: string };
+  const row = { id: user.id, username: meta.username ?? null, display_name: meta.display_name ?? null, onboarding_completed: false };
+  const first = await supabase.from("profiles").insert(row);
+  if (first.error) {
+    // 23505 = username já em uso por outra conta: cria o perfil sem username para o usuário escolher outro depois.
+    if (first.error.code === "23505") {
+      const retry = await supabase.from("profiles").insert({ ...row, username: null });
+      if (retry.error) console.error("[JARVIS] profiles (insert retry)", retry.error);
+    } else {
+      console.error("[JARVIS] profiles (insert)", first.error);
+    }
+  }
+}
+
 export function Providers({ children }: { children: ReactNode }) {
   const configured = isSupabaseConfigured();
   const supabase = useMemo(() => (configured ? getSupabase() : null), [configured]);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(configured);
+  const [recovery, setRecovery] = useState(false);
   const [accent, setAccentState] = useState<AccentColor>(DEFAULT_ACCENT);
   const [mode, setModeState] = useState<ThemeMode>(DEFAULT_MODE);
 
-  // Tema salvo localmente: evita "piscar" antes de carregar do Supabase.
+  // Tema salvo localmente: evita "piscar" antes de carregar do Supabase (cache visual, não é o banco principal).
   useEffect(() => {
     try {
       const cached = JSON.parse(localStorage.getItem(CACHE_KEY) ?? "null") as { accent?: AccentColor; mode?: ThemeMode } | null;
@@ -74,6 +108,14 @@ export function Providers({ children }: { children: ReactNode }) {
     return () => mq.removeEventListener("change", handler);
   }, [accent, mode]);
 
+  // Service worker (PWA): só em produção e em contexto seguro
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production") return;
+    if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
+    if ((window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.()) return; // no APK o service worker não é usado
+    navigator.serviceWorker.register("/sw.js").catch((e) => console.error("[JARVIS] service worker", e));
+  }, []);
+
   // Sessão
   useEffect(() => {
     if (!supabase) return;
@@ -83,7 +125,8 @@ export function Providers({ children }: { children: ReactNode }) {
       setUser(data.session?.user ?? null);
       setLoading(false);
     });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") setRecovery(true);
       setUser(session?.user ?? null);
       setLoading(false);
     });
@@ -93,7 +136,7 @@ export function Providers({ children }: { children: ReactNode }) {
     };
   }, [supabase]);
 
-  // Preferências de tema e perfil vindos do Supabase
+  // Perfil e preferências de tema vindos do Supabase
   useEffect(() => {
     if (!supabase || !user) return;
     let active = true;
@@ -110,11 +153,7 @@ export function Providers({ children }: { children: ReactNode }) {
       setModeState(m);
       localStorage.setItem(CACHE_KEY, JSON.stringify({ accent: a, mode: m }));
     })();
-    // Garante que exista um perfil para o usuário (ignora falhas silenciosamente).
-    supabase
-      .from("profiles")
-      .upsert({ id: user.id }, { onConflict: "id", ignoreDuplicates: true })
-      .then(({ error }) => error && console.error("[JARVIS] profiles", error));
+    void ensureProfile(supabase, user);
     return () => {
       active = false;
     };
@@ -150,8 +189,12 @@ export function Providers({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     if (supabase) await supabase.auth.signOut();
   }, [supabase]);
+  const clearRecovery = useCallback(() => setRecovery(false), []);
 
-  const auth = useMemo(() => ({ supabase, user, loading, configured, signOut }), [supabase, user, loading, configured, signOut]);
+  const auth = useMemo(
+    () => ({ supabase, user, loading, configured, recovery, clearRecovery, signOut }),
+    [supabase, user, loading, configured, recovery, clearRecovery, signOut],
+  );
   const theme = useMemo(() => ({ accent, mode, setAccent, setMode }), [accent, mode, setAccent, setMode]);
 
   return (

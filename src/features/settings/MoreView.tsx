@@ -1,62 +1,96 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { ReactNode } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { useAuth, useTheme } from "@/components/Providers";
 import { Avatar, Badge, Button, Card, EmptyState, ErrorState, Input, Loading, Tabs, useToast } from "@/components/ui";
 import { ACCENT_COLORS } from "@/config/theme";
+import { DevicesPanel } from "@/features/devices/DevicesPanel";
+import { HistoryPanel } from "@/features/devices/HistoryPanel";
 import { MemoryPanel } from "@/features/memory/MemoryPanel";
 import { AutonomyPanel, PermissionsPanel } from "@/features/permissions/Panels";
+import { DiagnosticsPanel } from "@/features/settings/DiagnosticsPanel";
+import { PasswordMeter } from "@/features/settings/AuthScreen";
 import { friendlyError } from "@/lib/errors";
-import type { AccentColor, ThemeMode } from "@/types";
+import { evaluatePassword, isValidUsername, normalizeUsername, USERNAME_RULES } from "@/lib/password";
+import type { AccentColor, AppNotification, ThemeMode } from "@/types";
 import { formatWhen } from "@/utils/datetime";
 
-type Section = "perfil" | "tema" | "ia" | "memoria" | "permissoes" | "notificacoes" | "integracoes" | "automacoes" | "privacidade" | "seguranca";
+type Section = "dispositivos" | "historico" | "perfil" | "tema" | "ia" | "memoria" | "permissoes" | "notificacoes" | "integracoes" | "automacoes" | "privacidade" | "seguranca" | "diagnostico";
 
 const SECTIONS: Array<{ id: Section; label: string; hint: string }> = [
-  { id: "perfil", label: "Perfil", hint: "Seu nome" },
+  { id: "dispositivos", label: "Dispositivos", hint: "Aparelhos Android, estado e capacidades" },
+  { id: "historico", label: "Histórico", hint: "Ações, comandos e eventos" },
+  { id: "perfil", label: "Perfil", hint: "Username e nome" },
   { id: "tema", label: "Tema", hint: "Modo e cor de destaque" },
   { id: "ia", label: "IA e autonomia", hint: "Até onde o JARVIS pode agir" },
   { id: "memoria", label: "Memória", hint: "O que o JARVIS guardou" },
   { id: "permissoes", label: "Permissões", hint: "Recursos liberados" },
   { id: "notificacoes", label: "Notificações", hint: "Avisos e lembretes" },
   { id: "integracoes", label: "Integrações", hint: "Gmail, Google Calendar, WhatsApp…" },
-  { id: "automacoes", label: "Automações", hint: "Em breve" },
+  { id: "automacoes", label: "Automações", hint: "Estrutura pendente" },
   { id: "privacidade", label: "Privacidade", hint: "Como seus dados são tratados" },
-  { id: "seguranca", label: "Segurança", hint: "Sessão e histórico de ações" },
+  { id: "seguranca", label: "Segurança", hint: "Senha, sessão e histórico de ações" },
+  { id: "diagnostico", label: "Diagnóstico", hint: "Testar a conexão com o Supabase" },
 ];
 
 function ProfilePanel() {
   const { supabase, user } = useAuth();
   const toast = useToast();
+  const [username, setUsername] = useState("");
   const [name, setName] = useState("");
+  const [onboarded, setOnboarded] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!supabase || !user) return;
     supabase
       .from("profiles")
-      .select("display_name")
+      .select("username, display_name, onboarding_completed")
       .eq("id", user.id)
       .maybeSingle()
-      .then(({ data }) => setName((data?.display_name as string | null) ?? ""));
-  }, [supabase, user]);
+      .then(({ data, error }) => {
+        if (error) toast(friendlyError(error, "Não foi possível carregar o perfil."), "error");
+        const p = data as { username?: string | null; display_name?: string | null; onboarding_completed?: boolean | null } | null;
+        setUsername(p?.username ?? "");
+        setName(p?.display_name ?? "");
+        setOnboarded(Boolean(p?.onboarding_completed));
+        setLoading(false);
+      });
+  }, [supabase, user, toast]);
 
   const save = async () => {
     if (!supabase || !user) return;
+    const u = normalizeUsername(username);
+    if (u && !isValidUsername(u)) {
+      toast(`Username inválido. ${USERNAME_RULES}`, "error");
+      return;
+    }
     setBusy(true);
-    const { error } = await supabase.from("profiles").upsert({ id: user.id, display_name: name.trim() || null }, { onConflict: "id" });
+    const { error } = await supabase
+      .from("profiles")
+      .upsert({ id: user.id, username: u || null, display_name: name.trim() || null, onboarding_completed: true }, { onConflict: "id" });
     setBusy(false);
-    toast(error ? friendlyError(error, "Não foi possível salvar o perfil.") : "Perfil salvo.", error ? "error" : "success");
+    if (error?.code === "23505") toast("Esse username já está em uso. Escolha outro.", "error");
+    else toast(error ? friendlyError(error, "Não foi possível salvar o perfil.") : "Perfil salvo.", error ? "error" : "success");
+    if (!error) setOnboarded(true);
   };
 
+  if (loading) return <Loading />;
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <Avatar name={name || user?.email} size={48} />
-        <p className="min-w-0 break-all text-sm text-muted">{user?.email}</p>
+        <Avatar name={name || username || user?.email} size={48} />
+        <div className="min-w-0">
+          <p className="break-all text-sm">{user?.email}</p>
+          <p className="text-xs text-muted">O e-mail é da conta e não aparece como username.</p>
+        </div>
       </div>
-      <Input label="Nome" value={name} onChange={(e) => setName(e.target.value)} placeholder="Como devo te chamar?" />
+      <Input label="Username" autoCapitalize="none" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="joao.silva" />
+      <p className="-mt-2 text-xs text-muted">{USERNAME_RULES}</p>
+      <Input label="Nome de exibição" value={name} onChange={(e) => setName(e.target.value)} placeholder="Como devo te chamar?" />
+      {!onboarded ? <Badge tone="accent">Perfil ainda não concluído</Badge> : null}
       <Button onClick={save} loading={busy}>
         Salvar
       </Button>
@@ -101,18 +135,24 @@ function ThemePanel() {
 
 function NotificationsPanel() {
   const { supabase, user } = useAuth();
-  const [items, setItems] = useState<Array<{ id: string; title: string; body: string | null; created_at: string }>>([]);
+  const toast = useToast();
+  const [items, setItems] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!supabase || !user) return;
     setLoading(true);
-    const { data, error: err } = await supabase.from("notifications").select("id, title, body, created_at").eq("user_id", user.id).order("created_at", { ascending: false }).limit(30);
+    const { data, error: err } = await supabase
+      .from("notifications")
+      .select("id, title, body, kind, read_at, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(50);
     if (err) setError(friendlyError(err, "Não foi possível carregar as notificações."));
     else {
       setError(null);
-      setItems((data ?? []) as typeof items);
+      setItems((data ?? []) as AppNotification[]);
     }
     setLoading(false);
   }, [supabase, user]);
@@ -121,17 +161,35 @@ function NotificationsPanel() {
     load();
   }, [load]);
 
+  const markAllRead = async () => {
+    if (!supabase || !user) return;
+    const { error: err } = await supabase.from("notifications").update({ read_at: new Date().toISOString() }).eq("user_id", user.id).is("read_at", null);
+    if (err) toast(friendlyError(err), "error");
+    else await load();
+  };
+
   if (loading) return <Loading />;
   if (error) return <ErrorState message={error} onRetry={load} />;
+  const unread = items.filter((n) => !n.read_at).length;
   return (
     <div className="space-y-2">
-      <p className="text-sm text-muted">Os lembretes aparecem aqui e como aviso dentro do app enquanto ele estiver aberto. Notificações push ainda não estão ativas.</p>
+      <p className="text-sm text-muted">
+        Os lembretes aparecem aqui e como aviso dentro do app enquanto ele estiver aberto. Notificações push (com o app fechado) ainda não estão ativas; a estrutura está pronta para isso.
+      </p>
+      {unread > 0 ? (
+        <Button variant="secondary" size="sm" onClick={markAllRead}>
+          Marcar {unread} como lida(s)
+        </Button>
+      ) : null}
       {items.length === 0 ? (
         <EmptyState title="Sem notificações" />
       ) : (
         items.map((n) => (
           <Card key={n.id} className="!p-3">
-            <p className="text-[15px]">{n.body ?? n.title}</p>
+            <div className="flex items-start justify-between gap-2">
+              <p className={`text-[15px] ${n.read_at ? "text-muted" : ""}`}>{n.body ?? n.title}</p>
+              {n.kind ? <Badge tone={n.read_at ? "neutral" : "accent"}>{n.kind}</Badge> : null}
+            </div>
             <p className="text-xs text-muted">{formatWhen(n.created_at)}</p>
           </Card>
         ))
@@ -165,26 +223,68 @@ function IntegrationsPanel() {
 
   return (
     <div className="space-y-2">
-      <p className="text-sm text-muted">A estrutura está pronta, mas nenhuma integração externa foi implementada ainda. Nada é enviado ou lido de serviços externos.</p>
+      <p className="text-sm text-muted">Essa integração ainda não está conectada. A estrutura está pronta, mas nenhum serviço externo foi implementado: nada é lido nem enviado.</p>
       {INTEGRATIONS.map((i) => (
         <Card key={i.key} className="flex items-center justify-between !p-3">
           <span className="text-[15px]">{i.label}</span>
-          <Badge tone={status[i.key] === "connected" ? "success" : "neutral"}>{status[i.key] === "connected" ? "Conectado" : "Não disponível"}</Badge>
+          <Badge tone={status[i.key] === "connected" ? "success" : "neutral"}>{status[i.key] === "connected" ? "Conectado" : "Não conectado"}</Badge>
         </Card>
       ))}
     </div>
   );
 }
 
+function ChangePassword() {
+  const { supabase } = useAuth();
+  const toast = useToast();
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!supabase) return;
+    if (!evaluatePassword(password).acceptable) {
+      toast("Escolha uma senha mais forte: 8+ caracteres e nível \"média\" ou superior.", "error");
+      return;
+    }
+    if (password !== confirm) {
+      toast("A confirmação não é igual à senha.", "error");
+      return;
+    }
+    setBusy(true);
+    const { error } = await supabase.auth.updateUser({ password });
+    setBusy(false);
+    if (error) toast(friendlyError(error, "Não foi possível alterar a senha."), "error");
+    else {
+      toast("Senha alterada.", "success");
+      setPassword("");
+      setConfirm("");
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="space-y-3">
+      <h3 className="text-sm font-medium text-muted">Alterar senha</h3>
+      <Input label="Nova senha" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+      {password ? <PasswordMeter password={password} /> : null}
+      <Input label="Confirmar nova senha" type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+      <Button type="submit" variant="secondary" loading={busy} disabled={!password}>
+        Alterar senha
+      </Button>
+    </form>
+  );
+}
+
 function SecurityPanel() {
   const { supabase, user, signOut } = useAuth();
-  const [logs, setLogs] = useState<Array<{ id: string; tool: string | null; status: string | null; created_at: string }>>([]);
+  const [logs, setLogs] = useState<Array<{ id: string; tool: string | null; status: string | null; origin: string | null; created_at: string }>>([]);
 
   useEffect(() => {
     if (!supabase || !user) return;
     supabase
       .from("audit_logs")
-      .select("id, tool, status, created_at")
+      .select("id, tool, status, origin, created_at")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(15)
@@ -192,7 +292,8 @@ function SecurityPanel() {
   }, [supabase, user]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      <ChangePassword />
       <Button variant="danger" onClick={() => void signOut()}>
         Sair da conta
       </Button>
@@ -202,10 +303,10 @@ function SecurityPanel() {
           <p className="text-sm text-muted">Nenhuma ação registrada ainda.</p>
         ) : (
           logs.map((l) => (
-            <Card key={l.id} className="flex items-center justify-between !p-3">
+            <Card key={l.id} className="flex items-center justify-between gap-2 !p-3">
               <span className="text-sm">{l.tool ?? "—"}</span>
-              <span className="text-xs text-muted">
-                {l.status} · {formatWhen(l.created_at)}
+              <span className="text-right text-xs text-muted">
+                {l.status} · {l.origin ?? "—"} · {formatWhen(l.created_at)}
               </span>
             </Card>
           ))
@@ -218,7 +319,7 @@ function SecurityPanel() {
 function PrivacyPanel() {
   return (
     <div className="space-y-3 text-sm text-muted">
-      <p>Seus dados ficam no seu projeto Supabase e só a sua conta consegue acessá-los (regras de segurança por usuário).</p>
+      <p>Seus dados ficam no seu projeto Supabase e só a sua conta consegue acessá-los (regras de segurança por usuário, RLS).</p>
       <p>O JARVIS só guarda na memória o que você pede ou adiciona. Você pode editar, desativar ou excluir qualquer item em Memória.</p>
       <p>Nenhuma chave privada é guardada no app. Ações sensíveis sempre exigem a sua confirmação e ficam registradas no histórico.</p>
     </div>
@@ -227,6 +328,10 @@ function PrivacyPanel() {
 
 function Panel({ section }: { section: Section }): ReactNode {
   switch (section) {
+    case "dispositivos":
+      return <DevicesPanel />;
+    case "historico":
+      return <HistoryPanel />;
     case "perfil":
       return <ProfilePanel />;
     case "tema":
@@ -242,11 +347,13 @@ function Panel({ section }: { section: Section }): ReactNode {
     case "integracoes":
       return <IntegrationsPanel />;
     case "automacoes":
-      return <EmptyState title="Automações em breve" description="As tabelas já existem no banco, mas o motor que executa automações agendadas ainda não foi implementado." />;
+      return <EmptyState title="Automações ainda não disponíveis" description="As tabelas automations e automation_runs existem, mas o prompt não define as colunas delas, e a regra é não inventar estrutura. Informe as colunas reais (nome, gatilho, ação, agenda, estado) para eu implementar. Também falta um motor que execute em segundo plano com o app fechado, que o Android restringe." />;
     case "privacidade":
       return <PrivacyPanel />;
     case "seguranca":
       return <SecurityPanel />;
+    case "diagnostico":
+      return <DiagnosticsPanel />;
   }
 }
 

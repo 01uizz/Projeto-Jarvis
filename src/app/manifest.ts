@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "JARVIS",
     short_name: "JARVIS",
     description: "Seu assistente pessoal de IA.",
-    start_url: "/",
+    start_url: "/app",
     scope: "/",
     display: "standalone",
     orientation: "portrait",

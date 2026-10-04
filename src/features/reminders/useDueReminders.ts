@@ -29,7 +29,7 @@ export function useDueReminders() {
         const { error: upErr } = await supabase.from("reminders").update({ status: "sent" }).eq("id", r.id).eq("user_id", user.id).eq("status", "pending");
         if (upErr) continue;
         toast(`⏰ ${r.message}`, "info");
-        await supabase.from("notifications").insert({ user_id: user.id, title: "Lembrete", body: r.message, kind: "reminder" });
+        await supabase.from("notifications").insert({ user_id: user.id, title: "Lembrete", body: r.message, kind: "lembrete" });
       }
     };
 

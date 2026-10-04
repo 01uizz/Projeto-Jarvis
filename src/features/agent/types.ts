@@ -12,6 +12,8 @@ export interface ToolResult {
   /** Texto curto para mostrar ao usuário. */
   message: string;
   data?: unknown;
+  /** Texto gravado no histórico de ações quando a mensagem ao usuário tem dado sensível (ex.: localização). */
+  auditMessage?: string;
   status?: ActionStatus;
 }
 
@@ -40,7 +42,15 @@ export interface ToolDefinition {
 
 export type AgentPlan =
   | { kind: "reply"; text: string }
-  | { kind: "tool"; tool: string; params: ToolParams; preface?: string };
+  | {
+      kind: "tool";
+      tool: string;
+      params: ToolParams;
+      /** Força uma confirmação antes de executar (ex.: o usuário só disse que "tem que" fazer algo). */
+      confirm?: boolean;
+      /** Pergunta mostrada ao usuário quando há confirmação. */
+      question?: string;
+    };
 
 export interface AIProvider {
   id: string;
