@@ -16,7 +16,7 @@ next-env.d.ts
 npm-debug.log*
 
 # Android (gerado no CI, não versionar)
-android/
+/android/
 capacitor.config.json
 *.keystore
 *.jks
